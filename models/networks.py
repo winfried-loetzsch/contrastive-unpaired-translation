@@ -5,6 +5,9 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import numpy as np
+
+from effects.watercolor import WatercolorEffect
+from helpers.visual_parameter_def import watercolor_vp_ranges
 from .stylegan_networks import StyleGAN2Discriminator, StyleGAN2Generator, TileStyleGAN2Discriminator
 
 ###############################################################################
@@ -208,11 +211,35 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[], debug=False, i
     if len(gpu_ids) > 0:
         assert(torch.cuda.is_available())
         net.to(gpu_ids[0])
+
         # if not amp:
         # net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs for non-AMP training
     if initialize_weights:
         init_weights(net, init_type, init_gain=init_gain, debug=debug)
     return net
+
+
+class PPNGenerator(nn.Module):
+    # OUR watercolor module
+    def __init__(self, generator):
+        super().__init__()
+        self.effect = WatercolorEffect()
+        self.effect.enable_checkpoints()
+        self.generator = generator
+
+    def forward(self, x, nce_layers=[], encode_only=False):
+        # TODO maybe we should add aux loss again..
+        if encode_only or len(nce_layers) > 0:
+            raise ValueError("generator should not be used for nce stuff")
+        vps = 0.5 * self.generator(x)  # conveniently for us they are also using tanh internally
+
+        x = (x * 0.5) + 0.5   # our effects cannot deal with neg. values
+        x = self.effect(x, vps)
+        return (x - 0.5) / 0.5
+
+    @staticmethod
+    def get_nc():
+        return len(watercolor_vp_ranges)
 
 
 def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal',
@@ -246,6 +273,9 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
+    if opt.ppn_generator == "watercolor":
+        output_nc = PPNGenerator.get_nc()
+
     if netG == 'resnet_9blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, no_antialias=no_antialias, no_antialias_up=no_antialias_up, n_blocks=9, opt=opt)
     elif netG == 'resnet_6blocks':
@@ -265,7 +295,12 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = G_Resnet(input_nc, output_nc, opt.nz, num_downs=2, n_res=n_blocks - 4, ngf=ngf, norm='inst', nl_layer='relu')
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
-    return init_net(net, init_type, init_gain, gpu_ids, initialize_weights=('stylegan2' not in netG))
+    net = init_net(net, init_type, init_gain, gpu_ids, initialize_weights=('stylegan2' not in netG))
+
+    if opt.ppn_generator == "watercolor":
+        net = PPNGenerator(net)
+        net = init_net(net, initialize_weights=False, gpu_ids=gpu_ids)  # transfer to GPU
+    return net
 
 
 def define_F(input_nc, netF, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, no_antialias=False, gpu_ids=[], opt=None):

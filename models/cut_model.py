@@ -35,6 +35,7 @@ class CUTModel(BaseModel):
         parser.add_argument('--flip_equivariance',
                             type=util.str2bool, nargs='?', const=True, default=False,
                             help="Enforce flip-equivariance as additional regularization. It's used by FastCUT, but not CUT")
+        parser.add_argument('--ppn_generator', default="watercolor")
 
         parser.set_defaults(pool_size=0)  # no image pooling
 
@@ -50,6 +51,12 @@ class CUTModel(BaseModel):
             )
         else:
             raise ValueError(opt.CUT_mode)
+
+        if opt.ppn_generator == "watercolor":
+            parser.set_defaults(
+                nce_idt=False, lambda_NCE=0.0, flip_equivariance=False,
+                n_epochs=150, n_epochs_decay=50
+            )
 
         return parser
 
@@ -124,12 +131,12 @@ class CUTModel(BaseModel):
         # update G
         self.set_requires_grad(self.netD, False)
         self.optimizer_G.zero_grad()
-        if self.opt.netF == 'mlp_sample':
+        if self.opt.netF == 'mlp_sample' and self.opt.lambda_NCE > 0.0:
             self.optimizer_F.zero_grad()
         self.loss_G = self.compute_G_loss()
         self.loss_G.backward()
         self.optimizer_G.step()
-        if self.opt.netF == 'mlp_sample':
+        if self.opt.netF == 'mlp_sample' and self.opt.lambda_NCE > 0.0:
             self.optimizer_F.step()
 
     def set_input(self, input):
