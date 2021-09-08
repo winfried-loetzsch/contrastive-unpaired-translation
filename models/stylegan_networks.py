@@ -886,7 +886,7 @@ class StyleGAN2Decoder(nn.Module):
             )
             cur_res = cur_res * 2
 
-        convs.append(ConvLayer(channels[cur_res], 3, 1))
+        convs.append(ConvLayer(channels[cur_res], output_nc, 1))
 
         self.convs = nn.Sequential(*convs)
 

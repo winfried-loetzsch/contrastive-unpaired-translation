@@ -52,11 +52,12 @@ class CUTModel(BaseModel):
         else:
             raise ValueError(opt.CUT_mode)
 
-        if opt.ppn_generator == "watercolor":
-            parser.set_defaults(
-                nce_idt=False, lambda_NCE=0.0, flip_equivariance=False,
-                n_epochs=150, n_epochs_decay=50
-            )
+        # This did not work well as content gets distorted
+        # if opt.ppn_generator == "watercolor":
+        #    parser.set_defaults(
+        #        nce_idt=False, lambda_NCE=0.0, flip_equivariance=False,
+        #        n_epochs=150, n_epochs_decay=50
+        #    )
 
         return parser
 
@@ -78,8 +79,9 @@ class CUTModel(BaseModel):
         else:  # during test time, only load G
             self.model_names = ['G']
 
+        print(f"do we have wc enabled: {opt.ppn_generator == 'watercolor'}")
         # define networks (both generator and discriminator)
-        self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, self.gpu_ids, opt)
+        self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, self.gpu_ids, opt, opt.ppn_generator == "watercolor")
         self.netF = networks.define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, self.gpu_ids, opt)
 
         if self.isTrain:

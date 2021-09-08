@@ -40,6 +40,9 @@ class CycleGANModel(BaseModel):
         Identity loss (optional): lambda_identity * (||G_A(B) - B|| * lambda_B + ||G_B(A) - A|| * lambda_A) (Sec 5.2 "Photo generation from paintings" in the paper)
         Dropout is not used in the original CycleGAN paper.
         """
+        parser.add_argument('--ppn_generator', default="none")
+        parser.add_argument('--amp', action='store_true')
+
         # parser.set_defaults(no_dropout=True, no_antialias=True, no_antialias_up=True)  # default CycleGAN did not use dropout
         # parser.set_defaults(no_dropout=True)
         if is_train:
@@ -190,7 +193,7 @@ class CycleGANModel(BaseModel):
         else:
             self.loss_G.backward()
 
-    def data_dependent_initialize(self):
+    def data_dependent_initialize(self, data):
         return
 
     def generate_visuals_for_evaluation(self, data, mode):

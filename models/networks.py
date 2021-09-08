@@ -1,3 +1,4 @@
+from effects.identity import IdentityEffect
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -220,21 +221,25 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[], debug=False, i
 
 
 class PPNGenerator(nn.Module):
-    # OUR watercolor module
+    # OUR xdog module
     def __init__(self, generator):
         super().__init__()
         self.effect = WatercolorEffect()
+        self.effect.depth_enhance = IdentityEffect()  # depth enhance would make it hard to COPY the image
         self.effect.enable_checkpoints()
         self.generator = generator
 
     def forward(self, x, nce_layers=[], encode_only=False):
         # TODO maybe we should add aux loss again..
-        if encode_only or len(nce_layers) > 0:
-            raise ValueError("generator should not be used for nce stuff")
-        vps = 0.5 * self.generator(x)  # conveniently for us they are also using tanh internally
+        vps = self.generator(x, nce_layers, encode_only)  # conveniently for us they are also using tanh internally
+
+        if len(nce_layers) > 0 and encode_only:
+            return vps
+        elif len(nce_layers) > 0:
+            raise RuntimeError("not implemented")
 
         x = (x * 0.5) + 0.5   # our effects cannot deal with neg. values
-        x = self.effect(x, vps)
+        x = self.effect(x, 0.5 * vps)  # multiply vps with 0.5 for [-0.5, 0.5] range
         return (x - 0.5) / 0.5
 
     @staticmethod
@@ -243,7 +248,8 @@ class PPNGenerator(nn.Module):
 
 
 def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal',
-             init_gain=0.02, no_antialias=False, no_antialias_up=False, gpu_ids=[], opt=None):
+             init_gain=0.02, no_antialias=False, no_antialias_up=False, gpu_ids=[], opt=None,
+             wrap_watercolor=False):
     """Create a generator
 
     Parameters:
@@ -273,7 +279,7 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
-    if opt.ppn_generator == "watercolor":
+    if wrap_watercolor:
         output_nc = PPNGenerator.get_nc()
 
     if netG == 'resnet_9blocks':
@@ -297,7 +303,8 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     net = init_net(net, init_type, init_gain, gpu_ids, initialize_weights=('stylegan2' not in netG))
 
-    if opt.ppn_generator == "watercolor":
+    if wrap_watercolor:
+        print("using watercolor effect in generator!!!")
         net = PPNGenerator(net)
         net = init_net(net, initialize_weights=False, gpu_ids=gpu_ids)  # transfer to GPU
     return net
